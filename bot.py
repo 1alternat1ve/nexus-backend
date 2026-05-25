@@ -19,6 +19,17 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
 
+async def get_avatar_url(telegram_id: int) -> str | None:
+    try:
+        photos = await bot.get_user_profile_photos(telegram_id, limit=1)
+        if photos.photos and len(photos.photos) > 0:
+            file_id = photos.photos[0][-1].file_id
+            file_path = (await bot.get_file(file_id)).file_path
+            return f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+    except Exception:
+        pass
+    return None
+
 @router.message(Command("start"))
 async def cmd_start(msg: Message):
     telegram_id = str(msg.from_user.id)
@@ -27,6 +38,7 @@ async def cmd_start(msg: Message):
     code = await db.create_code(telegram_id, username)
     code_str = "".join(code)
 
+    avatar_url = await get_avatar_url(msg.from_user.id)
     await msg.answer(
         f"🔑 Ваш код активации NEXUS:\n\n"
         f"<code>{code_str}</code>\n\n"

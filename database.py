@@ -3,8 +3,35 @@ import time
 import random
 import string
 import asyncio
+import os
+import httpx
 
 DATABASE = "nexus.db"
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+
+async def get_avatar_url(telegram_id: int) -> str | None:
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                f"https://api.telegram.org/bot{BOT_TOKEN}/getUserProfilePhotos",
+                params={"user_id": telegram_id, "limit": 1},
+                timeout=5.0
+            )
+            data = r.json()
+            if data.get("ok") and data["result"]["photos"]:
+                file_id = data["result"]["photos"][0][-1]["file_id"]
+                r2 = await client.get(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/getFile",
+                    params={"file_id": file_id},
+                    timeout=5.0
+                )
+                fdata = r2.json()
+                if fdata.get("ok"):
+                    return f"https://api.telegram.org/file/bot{BOT_TOKEN}/{fdata['result']['file_path']}"
+    except Exception:
+        pass
+    return None
 
 async def init_db():
     async with aiosqlite.connect(DATABASE) as db:
@@ -13,6 +40,7 @@ async def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 telegram_id TEXT UNIQUE,
                 username TEXT,
+                avatar_url TEXT,
                 code TEXT,
                 code_expires INTEGER,
                 activated INTEGER DEFAULT 0,
@@ -37,17 +65,19 @@ def generate_code():
 async def create_code(telegram_id: str, username: str) -> str:
     code = generate_code()
     expires = int(time.time()) + 180  # 3 минуты
+    avatar = await get_avatar_url(int(telegram_id)) if BOT_TOKEN else None
 
     async with aiosqlite.connect(DATABASE) as db:
         await db.execute("""
-            INSERT INTO users (telegram_id, username, code, code_expires, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO users (telegram_id, username, avatar_url, code, code_expires, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(telegram_id) DO UPDATE SET
                 code = excluded.code,
                 code_expires = excluded.code_expires,
                 username = excluded.username,
+                avatar_url = excluded.avatar_url,
                 activated = 0
-        """, (telegram_id, username, code, expires, int(time.time())))
+        """, (telegram_id, username, avatar, code, expires, int(time.time())))
         await db.commit()
 
     return code
@@ -77,6 +107,7 @@ async def activate(code: str) -> dict | None:
         return {
             "telegram_id": row["telegram_id"],
             "username": row["username"],
+            "avatar_url": row["avatar_url"],
         }
 
 async def get_stats() -> dict:
