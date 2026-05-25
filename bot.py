@@ -49,7 +49,7 @@ async def copy_code(call):
     await call.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text=f"✅ {code} (скопировано)", callback_data="copied")
     ]]))
-    await call.message.answer(f"📋 Код: <code>{code}</code>")
+    await call.message.answer(f"📋 Код: <code>{code}</code>", parse_mode="HTML")
 
 async def main():
     await db.init_db()
