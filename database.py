@@ -36,7 +36,7 @@ def generate_code():
 
 async def create_code(telegram_id: str, username: str) -> str:
     code = generate_code()
-    expires = int(time.time()) + 600  # 10 минут
+    expires = int(time.time()) + 180  # 3 минуты
 
     async with aiosqlite.connect(DATABASE) as db:
         await db.execute("""
