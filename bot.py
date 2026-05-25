@@ -30,7 +30,7 @@ async def cmd_start(msg: Message):
         f"🔑 Ваш код активации NEXUS:\n\n"
         f"<code>{' '.join(code)}</code>\n\n"
         f"Введите его в лаунчере.\n"
-        f"⏰ Код действует 10 минут."
+        f"⏰ Код действует 3 минуты."
     )
 
 @router.message(F.text)
