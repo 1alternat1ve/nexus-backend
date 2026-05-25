@@ -39,22 +39,9 @@ async def get_avatar_url(telegram_id: int) -> str | None:
         pass
     return None
 
-@router.message(Command("start"))
-async def cmd_start(msg: Message):
-    telegram_id = str(msg.from_user.id)
-    username = msg.from_user.username or msg.from_user.full_name
-
-    if not await check_subscription(msg.from_user.id):
-        await msg.answer(
-            "❌ Для получения кода необходимо подписаться на канал:\n\n"
-            "👉 https://t.me/nickblite\n\n"
-            "После подписки напишите /start снова."
-        )
-        return
-
-    code = await db.create_code(telegram_id, username)
+async def send_code(msg: Message, telegram_id: str):
+    code = await db.create_code(telegram_id, msg.from_user.username or msg.from_user.full_name)
     code_str = "".join(code)
-
     await msg.answer(
         f"🔑 Ваш код активации NEXUS:\n\n"
         f"<code>{code_str}</code>\n\n"
@@ -64,6 +51,32 @@ async def cmd_start(msg: Message):
             InlineKeyboardButton(text="📋 Скопировать код", callback_data=f"copy:{code_str}")
         ]])
     )
+
+@router.message(Command("start"))
+async def cmd_start(msg: Message):
+    telegram_id = str(msg.from_user.id)
+
+    if not await check_subscription(msg.from_user.id):
+        await msg.answer(
+            "❌ Для получения кода необходимо подписаться на канал:\n\n"
+            "👉 https://t.me/nickblite\n\n"
+            "После подписки нажмите кнопку ниже.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="✅ Я подписан", callback_data="check_sub")
+            ]])
+        )
+        return
+
+    await send_code(msg, telegram_id)
+
+@router.callback_query(F.data == "check_sub")
+async def check_sub(call):
+    if await check_subscription(call.from_user.id):
+        await call.message.edit_text("✅ Подписка подтверждена! Вот ваш код:")
+        await send_code(call.message, str(call.from_user.id))
+        await call.answer()
+    else:
+        await call.answer("❌ Вы ещё не подписаны на канал!", show_alert=True)
 
 @router.message(F.text)
 async def any_text(msg: Message):
