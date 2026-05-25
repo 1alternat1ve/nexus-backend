@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import database as db
+import models as m
 import asyncio
 
 app = FastAPI(title="NEXUS API", version="1.0.0")
@@ -27,7 +28,7 @@ async def stats():
     return s
 
 @app.post("/activate")
-async def activate(req: db.ActivateRequest):
+async def activate(req: m.ActivateRequest):
     result = await db.activate(req.code)
     if result:
         return {"success": True, "user": result}
