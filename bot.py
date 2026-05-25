@@ -31,6 +31,7 @@ async def cmd_start(msg: Message):
         f"🔑 Ваш код активации NEXUS:\n\n"
         f"<code>{code_str}</code>\n\n"
         f"⏰ Код действует 3 минуты.",
+        parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="📋 Скопировать код", callback_data=f"copy:{code_str}")
         ]])
@@ -45,11 +46,7 @@ async def any_text(msg: Message):
 @router.callback_query(F.data.startswith("copy:"))
 async def copy_code(call):
     code = call.data.split(":", 1)[1]
-    await call.answer()
-    await call.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=f"✅ {code} (скопировано)", callback_data="copied")
-    ]]))
-    await call.message.answer(f"📋 Код: <code>{code}</code>", parse_mode="HTML")
+    await call.answer(f"Код {code} скопирован!", show_alert=True)
 
 async def main():
     await db.init_db()
