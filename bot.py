@@ -19,6 +19,15 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
 
+CHANNEL_USERNAME = "@nickblite"
+
+async def check_subscription(telegram_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(CHANNEL_USERNAME, telegram_id)
+        return member.status in ("member", "administrator", "creator")
+    except Exception:
+        return False
+
 async def get_avatar_url(telegram_id: int) -> str | None:
     try:
         photos = await bot.get_user_profile_photos(telegram_id, limit=1)
@@ -35,10 +44,17 @@ async def cmd_start(msg: Message):
     telegram_id = str(msg.from_user.id)
     username = msg.from_user.username or msg.from_user.full_name
 
+    if not await check_subscription(msg.from_user.id):
+        await msg.answer(
+            "❌ Для получения кода необходимо подписаться на канал:\n\n"
+            "👉 https://t.me/nickblite\n\n"
+            "После подписки напишите /start снова."
+        )
+        return
+
     code = await db.create_code(telegram_id, username)
     code_str = "".join(code)
 
-    avatar_url = await get_avatar_url(msg.from_user.id)
     await msg.answer(
         f"🔑 Ваш код активации NEXUS:\n\n"
         f"<code>{code_str}</code>\n\n"
