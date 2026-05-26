@@ -21,11 +21,15 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
 
-# Состояние рассылки: {admin_id: True} если админ сейчас вводит текст рассылки
-broadcast_state: dict[int, bool] = {}
 
 # Активные коды в памяти: {telegram_id: expires_timestamp}
 active_codes: dict[str, int] = {}
+
+# Состояние рассылки
+broadcast_state: dict[int, bool] = {}
+
+# Состояние поиска: {admin_id: True} если админ сейчас вводит запрос
+search_state: dict[int, bool] = {}
 
 CHANNEL_USERNAME = "@nickblite"
 ADMIN_ID = 7398936492
@@ -48,6 +52,7 @@ def has_active_code(telegram_id: str) -> bool:
 def admin_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👥 Пользователи", callback_data="btn_users")],
+        [InlineKeyboardButton(text="🔍 Поиск", callback_data="btn_search")],
         [InlineKeyboardButton(text="🔴 Черный список", callback_data="btn_bans")],
         [InlineKeyboardButton(text="📊 Статистика", callback_data="btn_stats")],
         [InlineKeyboardButton(text="📢 Рассылка", callback_data="btn_broadcast")],
@@ -152,6 +157,7 @@ async def cmd_admin(msg: Message):
 async def btn_back(call: CallbackQuery):
     await call.answer()
     broadcast_state.pop(call.from_user.id, None)
+    search_state.pop(call.from_user.id, None)
     text = "<b>⚙️ Админ-панель NEXUS</b>\n\nВыберите действие:"
     await edit_with_menu(call.message.chat.id, call.message.message_id, text, admin_menu())
 
@@ -171,8 +177,6 @@ async def btn_users(call: CallbackQuery):
     for u in users:
         username = u.get("username") or "—"
         banned = u.get("banned")
-
-        # Статус онлайн: last_seen < 60 сек
         last_seen = u.get("last_seen") or 0
         online = (now - last_seen) < 60
 
@@ -190,7 +194,20 @@ async def btn_users(call: CallbackQuery):
 
     text = f"<b>👥 Пользователи ({len(users)})</b>\n\n" + "\n".join(lines)
     text += "\n\n🟢 = онлайн  ⚪ = оффлайн  🔴 = заблокирован"
-    await edit_with_menu(call.message.chat.id, call.message.message_id, text, back_menu())
+
+    buttons = []
+    for u in users:
+        username = u.get("username") or u["telegram_id"]
+        buttons.append([InlineKeyboardButton(
+            text=f"👤 {username}",
+            callback_data=f"info_{u['telegram_id']}"
+        )])
+    buttons.append([InlineKeyboardButton(text="◀ Назад", callback_data="btn_back")])
+
+    await edit_with_menu(
+        call.message.chat.id, call.message.message_id, text,
+        InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
 
 
 @router.callback_query(F.data == "btn_bans")
@@ -235,6 +252,127 @@ async def btn_stats(call: CallbackQuery):
         f"🔑 Всего активаций: <b>{s['total_activations']}</b>\n"
         f"🕐 Последняя активация: <b>{last}</b>"
     )
+    await edit_with_menu(call.message.chat.id, call.message.message_id, text, back_menu())
+
+
+@router.callback_query(F.data == "btn_search")
+async def btn_search(call: CallbackQuery):
+    await call.answer()
+    search_state[call.from_user.id] = True
+    await edit_with_menu(
+        call.message.chat.id, call.message.message_id,
+        "🔍 <b>Поиск пользователя</b>\n\n"
+        "Введите username или ID для поиска.\n\n"
+        "Отмена: /cancel",
+        InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀ Отмена", callback_data="btn_back")]
+        ])
+    )
+
+
+def user_detail_text(u: dict) -> str:
+    username = u.get("username") or "—"
+    tid = u["telegram_id"]
+    activated = "✅ Активирован" if u.get("activated") else "❌ Не активирован"
+    banned = "🔴 Заблокирован" if u.get("banned") else "🟢 Не заблокирован"
+    last_seen = u.get("last_seen")
+    if last_seen:
+        ago = int(time.time()) - last_seen
+        if ago < 60:
+            seen = f"{ago} сек назад"
+        elif ago < 3600:
+            seen = f"{ago // 60} мин назад"
+        elif ago < 86400:
+            seen = f"{ago // 3600} ч назад"
+        else:
+            seen = f"{ago // 86400} дн назад"
+    else:
+        seen = "—"
+    created = datetime.fromtimestamp(u.get("created_at") or 0).strftime("%d.%m.%Y") if u.get("created_at") else "—"
+
+    return (
+        f"<b>👤 {username}</b>\n\n"
+        f"ID: <code>{tid}</code>\n"
+        f"Статус: {activated}\n"
+        f"Бан: {banned}\n"
+        f"Активность: {seen}\n"
+        f"Регистрация: {created}"
+    )
+
+
+@router.callback_query(F.data.startswith("info_"))
+async def btn_info(call: CallbackQuery):
+    await call.answer()
+    user_id = call.data[5:]
+    user = await db.get_user_by_telegram_id(user_id)
+    if not user:
+        await call.answer("Пользователь не найден", show_alert=True)
+        return
+    text = user_detail_text(user)
+    buttons = []
+    if user.get("activated"):
+        buttons.append([InlineKeyboardButton(
+            text="⚠️ Кикнуть",
+            callback_data=f"kick_{user_id}"
+        )])
+    if user.get("banned"):
+        buttons.append([InlineKeyboardButton(
+            text="🟢 Разблокировать",
+            callback_data=f"unban_{user_id}"
+        )])
+    else:
+        buttons.append([InlineKeyboardButton(
+            text="🔴 Заблокировать",
+            callback_data=f"ban_{user_id}"
+        )])
+    buttons.append([InlineKeyboardButton(text="◀ Назад", callback_data="btn_users")])
+    await edit_with_menu(
+        call.message.chat.id, call.message.message_id, text,
+        InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+
+
+@router.callback_query(F.data.startswith("kick_"))
+async def btn_kick(call: CallbackQuery):
+    user_id = call.data[5:]
+    user = await db.get_user_by_telegram_id(user_id)
+    await db.deactivate_user(user_id)
+    await call.answer(f"⚠️ Пользователь {user.get('username') or user_id} кикнут", show_alert=True)
+    await btn_info(call)
+
+
+@router.callback_query(F.data == "btn_users")
+async def btn_users(call: CallbackQuery):
+    await call.answer()
+    users = await db.get_all_users()
+
+    if not users:
+        text = "📭 Пока никто не логинился."
+        await edit_with_menu(call.message.chat.id, call.message.message_id, text, back_menu())
+        return
+
+    lines = []
+    now = int(time.time())
+    for u in users:
+        username = u.get("username") or "—"
+        banned = u.get("banned")
+        last_seen = u.get("last_seen") or 0
+        online = (now - last_seen) < 60
+
+        if banned:
+            status = "🔴"
+            online_ico = ""
+        elif online:
+            status = "🟢"
+            online_ico = " 🟢"
+        else:
+            status = "⚪"
+            online_ico = " ⚪"
+
+        lines.append(f"{status} <b>{username}</b>{online_ico} — <code>{u['telegram_id']}</code>")
+
+    text = f"<b>👥 Пользователи ({len(users)})</b>\n\n" + "\n".join(lines)
+    text += "\n\n🟢 = онлайн  ⚪ = оффлайн  🔴 = заблокирован"
     await edit_with_menu(call.message.chat.id, call.message.message_id, text, back_menu())
 
 
@@ -308,9 +446,63 @@ async def any_text(msg: Message):
         )
         return
 
+    # Поиск — если админ в режиме поиска
+    if search_state.get(msg.from_user.id) and msg.from_user.id == ADMIN_ID:
+        search_state.pop(msg.from_user.id)
+        await delete_msg(msg)
+
+        users = await db.search_users(msg.text.strip())
+        if not users:
+            await msg.answer(
+                "🔍 <b>Поиск</b>\n\nНичего не найдено по запросу «<b>{}</b>»".format(msg.text),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="◀ Назад", callback_data="btn_back")]
+                ])
+            )
+            return
+
+        now = int(time.time())
+        lines = []
+        for u in users:
+            username = u.get("username") or "—"
+            banned = u.get("banned")
+            last_seen = u.get("last_seen") or 0
+            online = (now - last_seen) < 60
+
+            if banned:
+                status = "🔴"
+                online_ico = ""
+            elif online:
+                status = "🟢"
+                online_ico = " 🟢"
+            else:
+                status = "⚪"
+                online_ico = " ⚪"
+
+            lines.append(f"{status} <b>{username}</b>{online_ico} — <code>{u['telegram_id']}</code>")
+
+        text = f"🔍 <b>Результаты поиска ({len(users)})</b>\n\n" + "\n".join(lines)
+        buttons = []
+        for u in users:
+            username = u.get("username") or u["telegram_id"]
+            buttons.append([InlineKeyboardButton(
+                text=f"{'🔴' if u.get('banned') else '🟢'} {username}",
+                callback_data=f"info_{u['telegram_id']}"
+            )])
+        buttons.append([InlineKeyboardButton(text="◀ Назад", callback_data="btn_back")])
+
+        await msg.answer(
+            text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        return
+
     # Отмена рассылки
-    if msg.text == "/cancel" and broadcast_state.get(msg.from_user.id):
+    if msg.text == "/cancel" and (broadcast_state.get(msg.from_user.id) or search_state.get(msg.from_user.id)):
         broadcast_state.pop(msg.from_user.id)
+        search_state.pop(msg.from_user.id)
         await delete_msg(msg)
         text = "<b>⚙️ Админ-панель NEXUS</b>\n\nВыберите действие:"
         await msg.answer(text, parse_mode="HTML", reply_markup=admin_menu())

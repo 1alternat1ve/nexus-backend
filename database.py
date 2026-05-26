@@ -130,6 +130,24 @@ async def ban_user(telegram_id: str, banned: bool = True) -> bool:
     return True
 
 
+async def deactivate_user(telegram_id: str) -> bool:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE nexus_users SET activated = 0 WHERE telegram_id = $1", telegram_id)
+    return True
+
+
+async def search_users(query: str) -> list[dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT telegram_id, username, avatar_url, activated, banned, created_at, last_seen FROM nexus_users "
+            "WHERE username ILIKE $1 OR telegram_id LIKE $1 ORDER BY created_at DESC LIMIT 20",
+            f"%{query}%"
+        )
+        return [dict(row) for row in rows]
+
+
 async def activate(code: str) -> dict | None:
     now = int(time.time())
     pool = await get_pool()
