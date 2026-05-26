@@ -122,6 +122,17 @@ async def check_banned(telegram_id: str):
     await db.touch_user(telegram_id)
     return {"banned": False}
 
+@app.post("/offline/{telegram_id}")
+async def set_offline(telegram_id: str):
+    """Устанавливает last_seen на 61 сек назад — моментально показывает оффлайн."""
+    pool = await db.get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET last_seen = $1 WHERE telegram_id = $2",
+            int(time.time()) - 61, telegram_id
+        )
+    return {"ok": True}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
