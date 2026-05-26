@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -22,6 +23,7 @@ router = Router()
 CHANNEL_USERNAME = "@nickblite"
 ADMIN_ID = 7398936492
 
+
 async def check_subscription(telegram_id: int) -> bool:
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, telegram_id)
@@ -29,27 +31,24 @@ async def check_subscription(telegram_id: int) -> bool:
     except Exception:
         return False
 
-async def get_avatar_url(telegram_id: int) -> str | None:
-    try:
-        photos = await bot.get_user_profile_photos(telegram_id, limit=1)
-        if photos.photos and len(photos.photos) > 0:
-            file_id = photos.photos[0][-1].file_id
-            file_path = (await bot.get_file(file_id)).file_path
-            return f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
-    except Exception:
-        pass
-    return None
 
 async def send_code(msg: Message, telegram_id: str):
     code = await db.create_code(telegram_id, msg.from_user.username or msg.from_user.full_name)
-    code_str = "".join(code)
     await msg.answer(
         f"🔑 Ваш код активации NEXUS:\n\n"
-        f"<code>{code_str}</code>\n\n"
+        f"<code>{code}</code>\n\n"
         f"⏰ Код действует 3 минуты.\n\n"
         f"Введите код вручную в лаунчере NEXUS.",
         parse_mode="HTML"
     )
+
+
+async def notify_admin(text: str):
+    try:
+        await bot.send_message(ADMIN_ID, text, parse_mode="HTML")
+    except Exception:
+        pass
+
 
 @router.message(Command("start"))
 async def cmd_start(msg: Message):
@@ -68,6 +67,7 @@ async def cmd_start(msg: Message):
 
     await send_code(msg, telegram_id)
 
+
 @router.callback_query(F.data == "check_sub")
 async def check_sub(call):
     if await check_subscription(call.from_user.id):
@@ -76,6 +76,7 @@ async def check_sub(call):
         await call.answer()
     else:
         await call.answer("❌ Вы ещё не подписаны на канал!", show_alert=True)
+
 
 @router.message(Command("users"))
 async def cmd_users(msg: Message):
@@ -91,9 +92,93 @@ async def cmd_users(msg: Message):
     lines = []
     for u in users:
         username = u.get("username") or "—"
-        lines.append(f"• <b>{username}</b> (ID: <code>{u['telegram_id']}</code>) — {u['created_at']}")
+        status = "🔴 забанен" if u.get("banned") else "🟢 активен"
+        created = datetime.fromtimestamp(u["created_at"]).strftime("%d.%m.%Y %H:%M") if u.get("created_at") else "—"
+        lines.append(f"• <b>{username}</b> (ID: <code>{u['telegram_id']}</code>) — {status}")
 
-    await msg.answer(f"👥 Всего пользователей: {len(users)}\n\n" + "\n".join(lines), parse_mode="HTML")
+    await msg.answer(
+        f"👥 Всего пользователей: {len(users)}\n\n" + "\n".join(lines),
+        parse_mode="HTML"
+    )
+
+
+@router.message(Command("user"))
+async def cmd_user(msg: Message):
+    if msg.from_user.id != ADMIN_ID:
+        await msg.answer("❌ Нет доступа.")
+        return
+
+    parts = msg.text.split()
+    if len(parts) < 2:
+        await msg.answer("📖 Использование: /user <telegram_id>\nПример: /user 7398936492")
+        return
+
+    target_id = parts[1].strip().lstrip("@")
+    user = await db.get_user_by_telegram_id(target_id)
+
+    if not user:
+        await msg.answer("❌ Пользователь не найден.")
+        return
+
+    username = user.get("username") or "—"
+    status = "🔴 Забанен" if user.get("banned") else "🟢 Активен"
+    activated = "✅ Да" if user.get("activated") else "❌ Нет"
+    created = datetime.fromtimestamp(user["created_at"]).strftime("%d.%m.%Y %H:%M") if user.get("created_at") else "—"
+
+    text = (
+        f"<b>👤 Информация о пользователе</b>\n\n"
+        f"• <b>ID:</b> <code>{user['telegram_id']}</code>\n"
+        f"• <b>Username:</b> @{username}\n"
+        f"• <b>Статус:</b> {status}\n"
+        f"• <b>Активирован:</b> {activated}\n"
+        f"• <b>Первый вход:</b> {created}\n"
+    )
+
+    await msg.answer(text, parse_mode="HTML")
+
+
+@router.message(Command("ban"))
+async def cmd_ban(msg: Message):
+    if msg.from_user.id != ADMIN_ID:
+        await msg.answer("❌ Нет доступа.")
+        return
+
+    parts = msg.text.split()
+    if len(parts) < 2:
+        await msg.answer("📖 Использование:\n/ban <telegram_id> — заблокировать\n/unban <telegram_id> — разблокировать")
+        return
+
+    target_id = parts[1].strip()
+    user = await db.get_user_by_telegram_id(target_id)
+
+    if not user:
+        await msg.answer("❌ Пользователь не найден.")
+        return
+
+    await db.ban_user(target_id, True)
+    await msg.answer(f"🔴 Пользователь <b>{user.get('username') or target_id}</b> заблокирован.", parse_mode="HTML")
+
+
+@router.message(Command("unban"))
+async def cmd_unban(msg: Message):
+    if msg.from_user.id != ADMIN_ID:
+        await msg.answer("❌ Нет доступа.")
+        return
+
+    parts = msg.text.split()
+    if len(parts) < 2:
+        await msg.answer("📖 Использование: /unban <telegram_id>")
+        return
+
+    target_id = parts[1].strip()
+    user = await db.get_user_by_telegram_id(target_id)
+
+    if not user:
+        await msg.answer("❌ Пользователь не найден.")
+        return
+
+    await db.ban_user(target_id, False)
+    await msg.answer(f"🟢 Пользователь <b>{user.get('username') or target_id}</b> разблокирован.", parse_mode="HTML")
 
 
 @router.message(F.text)

@@ -44,6 +44,7 @@ async def init_db():
                 code TEXT,
                 code_expires INTEGER,
                 activated INTEGER DEFAULT 0,
+                banned INTEGER DEFAULT 0,
                 created_at INTEGER
             )
         """)
@@ -81,6 +82,21 @@ async def create_code(telegram_id: str, username: str) -> str:
         await db.commit()
 
     return code
+
+async def get_user_by_telegram_id(telegram_id: str) -> dict | None:
+    async with aiosqlite.connect(DATABASE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT telegram_id, username, avatar_url, activated, banned, created_at FROM users WHERE telegram_id = ?
+        """, (telegram_id,)) as cursor:
+            row = await cursor.fetchone()
+        return dict(row) if row else None
+
+async def ban_user(telegram_id: str, banned: bool = True) -> bool:
+    async with aiosqlite.connect(DATABASE) as db:
+        await db.execute("UPDATE users SET banned = ? WHERE telegram_id = ?", (1 if banned else 0, telegram_id))
+        await db.commit()
+        return True
 
 async def activate(code: str) -> dict | None:
     now = int(time.time())

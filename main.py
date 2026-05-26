@@ -50,6 +50,11 @@ async def activate(req: m.ActivateRequest):
 
     telegram_id = row["telegram_id"]
 
+    # Проверяем бан
+    user = await db.get_user_by_telegram_id(telegram_id)
+    if user and user.get("banned"):
+        return {"success": False, "error": "Доступ заблокирован"}
+
     # Проверяем подписку через Bot API
     if bot_token:
         try:
