@@ -115,6 +115,15 @@ async def check_banned(telegram_id: str):
     await db.touch_user(telegram_id)
     return {"banned": False}
 
+@app.get("/check/{telegram_id}")
+async def check_user(telegram_id: str):
+    """Проверяет banned и activated статусы. Обновляет last_seen."""
+    user = await db.get_user_by_telegram_id(telegram_id)
+    if user:
+        await db.touch_user(telegram_id)
+        return {"banned": bool(user.get("banned")), "activated": bool(user.get("activated"))}
+    return {"banned": False, "activated": False}
+
 @app.post("/offline/{telegram_id}")
 async def set_offline(telegram_id: str):
     pool = await db.get_pool()
