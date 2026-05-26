@@ -24,8 +24,25 @@ router = Router()
 # Состояние рассылки: {admin_id: True} если админ сейчас вводит текст рассылки
 broadcast_state: dict[int, bool] = {}
 
+# Rate limiting: {telegram_id: [timestamps]}
+rate_limit: dict[int, list[int]] = {}
+RATE_LIMIT = 3          # максимум /start за окно
+RATE_WINDOW = 60        # окно в секундах
+
 CHANNEL_USERNAME = "@nickblite"
 ADMIN_ID = 7398936492
+
+
+def is_rate_limited(telegram_id: int) -> bool:
+    now = int(time.time())
+    if telegram_id not in rate_limit:
+        rate_limit[telegram_id] = []
+    # Оставляем только запросы в пределах окна
+    rate_limit[telegram_id] = [t for t in rate_limit[telegram_id] if now - t < RATE_WINDOW]
+    if len(rate_limit[telegram_id]) >= RATE_LIMIT:
+        return True
+    rate_limit[telegram_id].append(now)
+    return False
 
 
 def admin_menu():
@@ -79,6 +96,11 @@ async def edit_with_menu(chat_id: int, message_id: int, text: str, markup=None):
 @router.message(Command("start"))
 async def cmd_start(msg: Message):
     await delete_msg(msg)
+
+    # Rate limit для обычных пользователей (админ не ограничен)
+    if msg.from_user.id != ADMIN_ID and is_rate_limited(msg.from_user.id):
+        await msg.answer("⏳ Слишком много запросов. Попробуй через минуту.")
+        return
 
     if not await check_subscription(msg.from_user.id):
         await msg.answer(
