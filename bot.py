@@ -80,20 +80,11 @@ async def edit_with_menu(chat_id: int, message_id: int, text: str, markup=None):
 async def cmd_start(msg: Message):
     await delete_msg(msg)
 
-    # Если активный код уже есть — показываем его, не генерируем новый
+    # Если активный код уже есть — не отправляем ничего, только удаляем сообщение
     if msg.from_user.id != ADMIN_ID:
         pending = await db.get_pending_code(str(msg.from_user.id))
         if pending:
-            remaining = pending["code_expires"] - int(time.time())
-            if remaining > 0:
-                await msg.answer(
-                    f"⏳ Код уже отправлен!\n\n"
-                    f"<code>{pending['code']}</code>\n\n"
-                    f"⏰ Истекает через {remaining} сек.\n\n"
-                    f"Новый код можно получить когда истечёт текущий.",
-                    parse_mode="HTML"
-                )
-                return
+            return
 
     if not await check_subscription(msg.from_user.id):
         await msg.answer(
