@@ -45,22 +45,9 @@ async def send_code(msg: Message, telegram_id: str):
     await msg.answer(
         f"🔑 Ваш код активации NEXUS:\n\n"
         f"<code>{code_str}</code>\n\n"
-        f"⏰ Код действует 3 минуты.",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📋 Скопировать код",
-                    callback_data=f"copy_{code_str}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🚀 Открыть лаунчер",
-                    url=f"https://nexus-backend-production-6175.up.railway.app/open?code={code_str}"
-                )
-            ]
-        ])
+        f"⏰ Код действует 3 минуты.\n\n"
+        f"Введите код вручную в лаунчере NEXUS.",
+        parse_mode="HTML"
     )
 
 @router.message(Command("start"))
@@ -88,15 +75,6 @@ async def check_sub(call):
         await call.answer()
     else:
         await call.answer("❌ Вы ещё не подписаны на канал!", show_alert=True)
-
-@router.callback_query(F.data.startswith("copy_"))
-async def copy_code(call):
-    code = call.data[5:]  # убрать "copy_"
-    await call.message.reply_text(
-        f"📋 Скопируйте этот код:\n\n<code>{code}</code>",
-        parse_mode="HTML"
-    )
-    await call.answer()
 
 @router.message(F.text)
 async def any_text(msg: Message):

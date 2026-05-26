@@ -3,7 +3,6 @@ import time
 import aiosqlite
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 import database as db
 import models as m
 import asyncio
@@ -95,56 +94,6 @@ async def check_subscription(telegram_id: str):
     except Exception as e:
         print(f"[check_subscription] error: {e}")
     return {"subscribed": False}
-
-@app.get("/open")
-async def open_nexus(code: str = None):
-    """Страница для авто-открытия лаунчера. Используется из Telegram браузера."""
-    if code:
-        html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>NEXUS</title>
-<style>
-body {{
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  display: flex; align-items: center; justify-content: center;
-  min-height: 100vh; margin: 0; background: #0f1629; color: #2dd4bf;
-  flex-direction: column; gap: 16px;
-}}
-h1 {{ margin: 0; font-size: 24px; }}
-p {{ color: #94a3b8; margin: 0; }}
-</style>
-<script>
-window.onload = function() {{
-  // Пробуем открыть лаунчер через custom protocol
-  var opened = false;
-  try {{
-    window.location = 'nexus://activate?code={code}';
-    opened = true;
-  }} catch(e) {{}}
-  // Показываем код если лаунчер не открылся
-  setTimeout(function() {{
-    if (!opened || document.hidden) {{
-      document.body.innerHTML = `
-        <h1>🔑 Код активации</h1>
-        <p style="font-size:32px;letter-spacing:0.2em;color:#fff;">{code}</p>
-        <p>Скопируйте код и вставьте в лаунчер NEXUS</p>
-      `;
-    }} else {{
-      document.body.innerHTML = '<h1>✅ Лаунчер открыт!</h1><p>Введите код вручную если потребуется: <strong>{code}</strong></p>';
-    }}
-  }}, 1000);
-}};
-</script>
-</head>
-<body>
-<h1>🚀 Запуск NEXUS...</h1>
-<p>Если лаунчер не открылся автоматически, скопируйте код ниже</p>
-</body>
-</html>"""
-        return HTMLResponse(content=html, media_type="text/html")
-    return HTMLResponse(content="<h1>Code required</h1>", status_code=400)
 
 @app.get("/user/{code}")
 async def get_user(code: str):
