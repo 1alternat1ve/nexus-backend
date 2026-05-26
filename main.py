@@ -1,4 +1,6 @@
 import os
+import time
+import aiosqlite
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import database as db
@@ -30,6 +32,45 @@ async def stats():
 
 @app.post("/activate")
 async def activate(req: m.ActivateRequest):
+    import httpx
+    now = int(time.time())
+    bot_token = os.environ.get("BOT_TOKEN", "")
+
+    # Получаем telegram_id по коду (без активации)
+    async with aiosqlite.connect(db.DATABASE) as db_conn:
+        db_conn.row_factory = aiosqlite.Row
+        async with db_conn.execute(
+            "SELECT telegram_id FROM users WHERE code = ? AND code_expires > ? AND activated = 0",
+            (req.code, now)
+        ) as cursor:
+            row = await cursor.fetchone()
+
+    if not row:
+        return {"success": False, "error": "Неверный или просроченный код"}
+
+    telegram_id = row["telegram_id"]
+
+    # Проверяем подписку через Bot API
+    if bot_token:
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(
+                    f"https://api.telegram.org/bot{bot_token}/getChatMember",
+                    params={"chat_id": "@nickblite", "user_id": telegram_id},
+                    timeout=5.0
+                )
+                data = r.json()
+                if data.get("ok"):
+                    status = data["result"]["status"]
+                    if status not in ("member", "administrator", "creator"):
+                        return {"success": False, "error": "Подписка на канал не подтверждена"}
+                else:
+                    # getChatMember вернул ошибку — пропускаем проверку
+                    print(f"[activate] getChatMember error: {data}")
+        except Exception as e:
+            print(f"[activate] subscription check error: {e}")
+
+    # Подписка в порядке — активируем
     result = await db.activate(req.code)
     if result:
         return {"success": True, "user": result}
