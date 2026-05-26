@@ -20,6 +20,9 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
 
+# Состояние рассылки: {admin_id: True} если админ сейчас вводит текст рассылки
+broadcast_state: dict[int, bool] = {}
+
 CHANNEL_USERNAME = "@nickblite"
 ADMIN_ID = 7398936492
 
@@ -118,8 +121,41 @@ async def check_sub(call: CallbackQuery):
 
 @router.message(F.text)
 async def any_text(msg: Message):
-    if msg.text.startswith("/"):
+    # Обработка рассылки — если админ в режиме ввода текста
+    if broadcast_state.get(msg.from_user.id) and msg.from_user.id == ADMIN_ID:
+        broadcast_state.pop(msg.from_user.id)
+        await delete_msg(msg)
+
+        users = await db.get_all_users()
+        activated = [u for u in users if u.get("activated")]
+        sent = 0
+        failed = 0
+
+        for u in activated:
+            try:
+                await bot.send_message(int(u["telegram_id"]), msg.text, parse_mode="HTML")
+                sent += 1
+            except Exception:
+                failed += 1
+
+        await msg.answer(
+            f"✅ <b>Рассылка завершена</b>\n\n"
+            f"📤 Отправлено: <b>{sent}</b>\n"
+            f"❌ Не доставлено: <b>{failed}</b>",
+            parse_mode="HTML"
+        )
         return
+
+    if msg.text.startswith("/"):
+        # Отмена рассылки
+        if msg.text == "/cancel" and broadcast_state.get(msg.from_user.id):
+            broadcast_state.pop(msg.from_user.id)
+            await delete_msg(msg)
+            text = "<b>⚙️ Админ-панель NEXUS</b>\n\nВыберите действие:"
+            await msg.answer(text, parse_mode="HTML", reply_markup=admin_menu())
+            return
+        return
+
     await delete_msg(msg)
     await msg.answer("Напишите /start чтобы получить код активации.")
 
@@ -140,6 +176,7 @@ async def cmd_admin(msg: Message):
 @router.callback_query(F.data == "btn_back")
 async def btn_back(call: CallbackQuery):
     await call.answer()
+    broadcast_state.pop(call.from_user.id, None)
     text = "<b>⚙️ Админ-панель NEXUS</b>\n\nВыберите действие:"
     await edit_with_menu(call.message.chat.id, call.message.message_id, text, admin_menu())
 
@@ -216,15 +253,24 @@ async def btn_stats(call: CallbackQuery):
 @router.callback_query(F.data == "btn_broadcast")
 async def btn_broadcast(call: CallbackQuery):
     await call.answer()
+    broadcast_state[call.from_user.id] = True
     await call.message.edit_text(
         "📢 <b>Рассылка</b>\n\n"
         "Напишите сообщение в чат — оно будет отправлено всем активированным пользователям.\n\n"
         "Отмена: /cancel",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀ Отмена", callback_data="btn_back")]
+            [InlineKeyboardButton(text="◀ Отмена", callback_data="btn_broadcast_cancel")]
         ])
     )
+
+
+@router.callback_query(F.data == "btn_broadcast_cancel")
+async def btn_broadcast_cancel(call: CallbackQuery):
+    await call.answer()
+    broadcast_state.pop(call.from_user.id, None)
+    text = "<b>⚙️ Админ-панель NEXUS</b>\n\nВыберите действие:"
+    await edit_with_menu(call.message.chat.id, call.message.message_id, text, admin_menu())
 
 
 @router.callback_query(F.data.startswith("ban_"))
