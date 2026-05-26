@@ -55,7 +55,7 @@ async def init_db():
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE IF NOT EXISTS nexus_users (
                 id SERIAL PRIMARY KEY,
                 telegram_id TEXT UNIQUE,
                 username TEXT,
@@ -69,14 +69,14 @@ async def init_db():
             )
         """)
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS stats (
+            CREATE TABLE IF NOT EXISTS nexus_stats (
                 id INTEGER PRIMARY KEY,
                 total_activations INTEGER DEFAULT 0,
                 last_activation INTEGER
             )
         """)
         await conn.execute("""
-            INSERT INTO stats (id, total_activations) VALUES (1, 0)
+            INSERT INTO nexus_stats (id, total_activations) VALUES (1, 0)
             ON CONFLICT (id) DO NOTHING
         """)
 
@@ -93,7 +93,7 @@ async def create_code(telegram_id: str, username: str) -> tuple[str, int]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO users (telegram_id, username, avatar_url, code, code_expires, created_at, last_seen)
+            INSERT INTO nexus_users (telegram_id, username, avatar_url, code, code_expires, created_at, last_seen)
             VALUES ($1, $2, $3, $4, $5, $6, $6)
             ON CONFLICT (telegram_id) DO UPDATE SET
                 code = EXCLUDED.code,
@@ -111,7 +111,7 @@ async def get_user_by_telegram_id(telegram_id: str) -> dict | None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT telegram_id, username, avatar_url, activated, banned, created_at, last_seen FROM users WHERE telegram_id = $1",
+            "SELECT telegram_id, username, avatar_url, activated, banned, created_at, last_seen FROM nexus_users WHERE telegram_id = $1",
             telegram_id
         )
         return dict(row) if row else None
@@ -120,13 +120,13 @@ async def get_user_by_telegram_id(telegram_id: str) -> dict | None:
 async def touch_user(telegram_id: str):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await conn.execute("UPDATE users SET last_seen = $1 WHERE telegram_id = $2", int(time.time()), telegram_id)
+        await conn.execute("UPDATE nexus_users SET last_seen = $1 WHERE telegram_id = $2", int(time.time()), telegram_id)
 
 
 async def ban_user(telegram_id: str, banned: bool = True) -> bool:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await conn.execute("UPDATE users SET banned = $1 WHERE telegram_id = $2", 1 if banned else 0, telegram_id)
+        await conn.execute("UPDATE nexus_users SET banned = $1 WHERE telegram_id = $2", 1 if banned else 0, telegram_id)
     return True
 
 
@@ -135,18 +135,18 @@ async def activate(code: str) -> dict | None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM users WHERE code = $1 AND code_expires > $2 AND activated = 0",
+            "SELECT * FROM nexus_users WHERE code = $1 AND code_expires > $2 AND activated = 0",
             code, now
         )
         if not row:
             return None
 
         await conn.execute(
-            "UPDATE users SET activated = 1, code = NULL, code_expires = NULL WHERE id = $1",
+            "UPDATE nexus_users SET activated = 1, code = NULL, code_expires = NULL WHERE id = $1",
             row["id"]
         )
         await conn.execute(
-            "UPDATE stats SET total_activations = total_activations + 1, last_activation = $1 WHERE id = 1",
+            "UPDATE nexus_stats SET total_activations = total_activations + 1, last_activation = $1 WHERE id = 1",
             now
         )
 
@@ -161,7 +161,7 @@ async def get_all_users() -> list[dict]:
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT telegram_id, username, avatar_url, activated, banned, created_at, last_seen FROM users ORDER BY created_at DESC"
+            "SELECT telegram_id, username, avatar_url, activated, banned, created_at, last_seen FROM nexus_users ORDER BY created_at DESC"
         )
         return [dict(row) for row in rows]
 
@@ -169,5 +169,5 @@ async def get_all_users() -> list[dict]:
 async def get_stats() -> dict:
     pool = await get_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM stats WHERE id = 1")
+        row = await conn.fetchrow("SELECT * FROM nexus_stats WHERE id = 1")
         return dict(row) if row else {"total_activations": 0, "last_activation": None}
