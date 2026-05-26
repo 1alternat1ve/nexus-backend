@@ -42,15 +42,6 @@ def back_menu():
     ])
 
 
-def ban_toggle_menu(user_id: str, banned: bool):
-    action = "✅ Разблокировать" if banned else "🔴 Заблокировать"
-    action_data = f"unban_{user_id}" if banned else f"ban_{user_id}"
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=action, callback_data=action_data)],
-        [InlineKeyboardButton(text="◀ Назад", callback_data="btn_bans")],
-    ])
-
-
 async def check_subscription(telegram_id: int) -> bool:
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, telegram_id)
@@ -119,58 +110,20 @@ async def check_sub(call: CallbackQuery):
         )
 
 
-@router.message(F.text)
-async def any_text(msg: Message):
-    # Обработка рассылки — если админ в режиме ввода текста
-    if broadcast_state.get(msg.from_user.id) and msg.from_user.id == ADMIN_ID:
-        broadcast_state.pop(msg.from_user.id)
-        await delete_msg(msg)
-
-        users = await db.get_all_users()
-        activated = [u for u in users if u.get("activated")]
-        sent = 0
-        failed = 0
-
-        for u in activated:
-            try:
-                await bot.send_message(int(u["telegram_id"]), msg.text, parse_mode="HTML")
-                sent += 1
-            except Exception:
-                failed += 1
-
-        await msg.answer(
-            f"✅ <b>Рассылка завершена</b>\n\n"
-            f"📤 Отправлено: <b>{sent}</b>\n"
-            f"❌ Не доставлено: <b>{failed}</b>",
-            parse_mode="HTML"
-        )
-        return
-
-    if msg.text.startswith("/"):
-        # Отмена рассылки
-        if msg.text == "/cancel" and broadcast_state.get(msg.from_user.id):
-            broadcast_state.pop(msg.from_user.id)
-            await delete_msg(msg)
-            text = "<b>⚙️ Админ-панель NEXUS</b>\n\nВыберите действие:"
-            await msg.answer(text, parse_mode="HTML", reply_markup=admin_menu())
-            return
-        return
-
-    await delete_msg(msg)
-    await msg.answer("Напишите /start чтобы получить код активации.")
-
-
 # === Админ-панель ===
 
 @router.message(Command("admin"))
 @router.message(Command("menu"))
 async def cmd_admin(msg: Message):
+    logger.info(f"cmd_admin called by {msg.from_user.id}")
     if msg.from_user.id != ADMIN_ID:
+        logger.info(f"Not admin: {msg.from_user.id} != {ADMIN_ID}")
         return
     await delete_msg(msg)
 
     text = "<b>⚙️ Админ-панель NEXUS</b>\n\nВыберите действие:"
     await msg.answer(text, parse_mode="HTML", reply_markup=admin_menu())
+    logger.info("Admin menu sent")
 
 
 @router.callback_query(F.data == "btn_back")
@@ -289,6 +242,47 @@ async def btn_unban(call: CallbackQuery):
     await db.ban_user(user_id, False)
     await call.answer(f"🟢 Разблокирован: {user.get('username') or user_id}", show_alert=True)
     await btn_bans(call)
+
+
+# === Остальные текстовые сообщения (в конце) ===
+
+@router.message(F.text)
+async def any_text(msg: Message):
+    # Рассылка — если админ в режиме ввода
+    if broadcast_state.get(msg.from_user.id) and msg.from_user.id == ADMIN_ID:
+        broadcast_state.pop(msg.from_user.id)
+        await delete_msg(msg)
+
+        users = await db.get_all_users()
+        activated = [u for u in users if u.get("activated")]
+        sent = 0
+        failed = 0
+
+        for u in activated:
+            try:
+                await bot.send_message(int(u["telegram_id"]), msg.text, parse_mode="HTML")
+                sent += 1
+            except Exception:
+                failed += 1
+
+        await msg.answer(
+            f"✅ <b>Рассылка завершена</b>\n\n"
+            f"📤 Отправлено: <b>{sent}</b>\n"
+            f"❌ Не доставлено: <b>{failed}</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    # Отмена рассылки
+    if msg.text == "/cancel" and broadcast_state.get(msg.from_user.id):
+        broadcast_state.pop(msg.from_user.id)
+        await delete_msg(msg)
+        text = "<b>⚙️ Админ-панель NEXUS</b>\n\nВыберите действие:"
+        await msg.answer(text, parse_mode="HTML", reply_markup=admin_menu())
+        return
+
+    await delete_msg(msg)
+    await msg.answer("Напишите /start чтобы получить код активации.")
 
 
 async def main():
