@@ -20,6 +20,7 @@ dp = Dispatcher()
 router = Router()
 
 CHANNEL_USERNAME = "@nickblite"
+ADMIN_ID = 7398936492
 
 async def check_subscription(telegram_id: int) -> bool:
     try:
@@ -75,6 +76,25 @@ async def check_sub(call):
         await call.answer()
     else:
         await call.answer("❌ Вы ещё не подписаны на канал!", show_alert=True)
+
+@router.message(Command("users"))
+async def cmd_users(msg: Message):
+    if msg.from_user.id != ADMIN_ID:
+        await msg.answer("❌ Нет доступа.")
+        return
+
+    users = await db.get_all_users()
+    if not users:
+        await msg.answer("📭 Пока никто не логинился.")
+        return
+
+    lines = []
+    for u in users:
+        username = u.get("username") or "—"
+        lines.append(f"• <b>{username}</b> (ID: <code>{u['telegram_id']}</code>) — {u['created_at']}")
+
+    await msg.answer(f"👥 Всего пользователей: {len(users)}\n\n" + "\n".join(lines), parse_mode="HTML")
+
 
 @router.message(F.text)
 async def any_text(msg: Message):

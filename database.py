@@ -110,6 +110,15 @@ async def activate(code: str) -> dict | None:
             "avatar_url": row["avatar_url"],
         }
 
+async def get_all_users() -> list[dict]:
+    async with aiosqlite.connect(DATABASE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT telegram_id, username, avatar_url, activated, created_at FROM users ORDER BY created_at DESC
+        """) as cursor:
+            rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
 async def get_stats() -> dict:
     async with aiosqlite.connect(DATABASE) as db:
         db.row_factory = aiosqlite.Row
