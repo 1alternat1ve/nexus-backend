@@ -24,8 +24,25 @@ router = Router()
 # Состояние рассылки: {admin_id: True} если админ сейчас вводит текст рассылки
 broadcast_state: dict[int, bool] = {}
 
+# Активные коды в памяти: {telegram_id: expires_timestamp}
+active_codes: dict[str, int] = {}
+
 CHANNEL_USERNAME = "@nickblite"
 ADMIN_ID = 7398936492
+
+
+def set_active_code(telegram_id: str, expires: int):
+    active_codes[telegram_id] = expires
+
+
+def has_active_code(telegram_id: str) -> bool:
+    now = int(time.time())
+    if telegram_id not in active_codes:
+        return False
+    if active_codes[telegram_id] <= now:
+        active_codes.pop(telegram_id, None)
+        return False
+    return True
 
 
 def admin_menu():
@@ -52,7 +69,8 @@ async def check_subscription(telegram_id: int) -> bool:
 
 
 async def send_code(msg: Message, telegram_id: str):
-    code = await db.create_code(telegram_id, msg.from_user.username or msg.from_user.full_name)
+    code, expires = await db.create_code(telegram_id, msg.from_user.username or msg.from_user.full_name)
+    set_active_code(telegram_id, expires)
     await msg.answer(
         f"🔑 Ваш код активации NEXUS:\n\n"
         f"<code>{code}</code>\n\n"
@@ -81,10 +99,8 @@ async def cmd_start(msg: Message):
     await delete_msg(msg)
 
     # Если активный код уже есть — не отправляем ничего, только удаляем сообщение
-    if msg.from_user.id != ADMIN_ID:
-        pending = await db.get_pending_code(str(msg.from_user.id))
-        if pending:
-            return
+    if msg.from_user.id != ADMIN_ID and has_active_code(str(msg.from_user.id)):
+        return
 
     if not await check_subscription(msg.from_user.id):
         await msg.answer(

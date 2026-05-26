@@ -84,7 +84,8 @@ async def get_pending_code(telegram_id: str) -> dict | None:
 def generate_code():
     return ''.join(random.choices(string.digits, k=6))
 
-async def create_code(telegram_id: str, username: str) -> str:
+async def create_code(telegram_id: str, username: str) -> tuple[str, int]:
+    """Возвращает (code, expires_timestamp)."""
     code = generate_code()
     expires = int(time.time()) + 60  # 1 минута
     avatar = await get_avatar_url(int(telegram_id)) if BOT_TOKEN else None
@@ -104,7 +105,7 @@ async def create_code(telegram_id: str, username: str) -> str:
         """, (telegram_id, username, avatar, code, expires, now, now))
         await db.commit()
 
-    return code
+    return code, expires
 
 async def get_user_by_telegram_id(telegram_id: str) -> dict | None:
     async with aiosqlite.connect(DATABASE) as db:
