@@ -3,6 +3,7 @@ import time
 import aiosqlite
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 import database as db
 import models as m
 import asyncio
@@ -95,12 +96,30 @@ async def check_subscription(telegram_id: str):
         print(f"[check_subscription] error: {e}")
     return {"subscribed": False}
 
+@app.get("/activate")
+async def activate_redirect(code: str = None):
+    """Веб-редирект для Telegram кнопки. Автоматически открывает nexus://"""
+    if code:
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="refresh" content="0;url=nexus://activate?code={code}">
+<script>window.location.replace('nexus://activate?code={code}');</script>
+</head>
+<body>
+<noscript>
+<a href="nexus://activate?code={code}">Открыть NEXUS</a>
+</noscript>
+</body>
+</html>"""
+        return HTMLResponse(content=html, media_type="text/html")
+    return HTMLResponse(content="<h1>Code required</h1>", status_code=400)
+
 @app.get("/user/{code}")
 async def get_user(code: str):
-    # Используется для проверки кода без активации
-    now = int(__import__("time").time())
-    async with __import__("aiosqlite").connect(db.DATABASE) as db_conn:
-        db_conn.row_factory = __import__("aiosqlite").Row
+    now = int(time.time())
+    async with aiosqlite.connect(db.DATABASE) as db_conn:
+        db_conn.row_factory = aiosqlite.Row
         async with db_conn.execute(
             "SELECT username, code_expires FROM users WHERE code = ?",
             (code,)

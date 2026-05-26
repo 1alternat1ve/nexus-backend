@@ -45,12 +45,13 @@ async def send_code(msg: Message, telegram_id: str):
     await msg.answer(
         f"🔑 Ваш код активации NEXUS:\n\n"
         f"<code>{code_str}</code>\n\n"
-        f"⏰ Код действует 3 минуты.",
+        f"⏰ Код действует 3 минуты.\n\n"
+        f"Нажмите кнопку ниже чтобы открыть лаунчер:",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(
                 text="🚀 Открыть NEXUS",
-                url=f"nexus://activate?code={code_str}"
+                url=f"https://nexus-backend-production-6175.up.railway.app/activate?code={code_str}"
             )
         ]])
     )
