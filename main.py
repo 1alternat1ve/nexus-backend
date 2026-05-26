@@ -119,6 +119,7 @@ async def check_banned(telegram_id: str):
     user = await db.get_user_by_telegram_id(telegram_id)
     if user and user.get("banned"):
         return {"banned": True}
+    await db.touch_user(telegram_id)
     return {"banned": False}
 
 if __name__ == "__main__":

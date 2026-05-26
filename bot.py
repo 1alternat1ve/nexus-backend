@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+import time
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -144,12 +145,29 @@ async def btn_users(call: CallbackQuery):
         return
 
     lines = []
+    now = int(time.time())
     for u in users:
         username = u.get("username") or "—"
-        status = "🔴" if u.get("banned") else "🟢"
-        lines.append(f"{status} <b>{username}</b> — <code>{u['telegram_id']}</code>")
+        banned = u.get("banned")
+
+        # Статус онлайн: last_seen < 60 сек
+        last_seen = u.get("last_seen") or 0
+        online = (now - last_seen) < 60
+
+        if banned:
+            status = "🔴"
+            online_ico = ""
+        elif online:
+            status = "🟢"
+            online_ico = " 🟢"
+        else:
+            status = "⚪"
+            online_ico = " ⚪"
+
+        lines.append(f"{status} <b>{username}</b>{online_ico} — <code>{u['telegram_id']}</code>")
 
     text = f"<b>👥 Пользователи ({len(users)})</b>\n\n" + "\n".join(lines)
+    text += "\n\n🟢 = онлайн  ⚪ = оффлайн  🔴 = заблокирован"
     await edit_with_menu(call.message.chat.id, call.message.message_id, text, back_menu())
 
 
