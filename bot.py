@@ -132,7 +132,7 @@ async def check_sub(call: CallbackQuery):
         )
 
 
-# === Админ-панель ===  v2
+# === Админ-панель ===
 
 @router.message(Command("admin"))
 @router.message(Command("menu"))
