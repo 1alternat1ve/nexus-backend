@@ -1,11 +1,9 @@
 import os
 import time
-import aiosqlite
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import database as db
 import models as m
-import asyncio
 
 app = FastAPI(title="NEXUS API", version="1.0.0")
 
@@ -33,17 +31,15 @@ async def stats():
 @app.post("/activate")
 async def activate(req: m.ActivateRequest):
     import httpx
-    now = int(time.time())
     bot_token = os.environ.get("BOT_TOKEN", "")
 
-    # Получаем telegram_id по коду (без активации)
-    async with aiosqlite.connect(db.DATABASE) as db_conn:
-        db_conn.row_factory = aiosqlite.Row
-        async with db_conn.execute(
-            "SELECT telegram_id FROM users WHERE code = ? AND code_expires > ? AND activated = 0",
-            (req.code, now)
-        ) as cursor:
-            row = await cursor.fetchone()
+    # Находим код через базу
+    pool = await db.get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT telegram_id FROM nexus_users WHERE code = $1 AND code_expires > $2 AND activated = 0",
+            req.code, int(time.time())
+        )
 
     if not row:
         return {"success": False, "error": "Неверный или просроченный код"}
@@ -55,7 +51,7 @@ async def activate(req: m.ActivateRequest):
     if user and user.get("banned"):
         return {"success": False, "error": "Доступ заблокирован"}
 
-    # Проверяем подписку через Bot API
+    # Проверяем подписку
     if bot_token:
         try:
             async with httpx.AsyncClient() as client:
@@ -70,12 +66,11 @@ async def activate(req: m.ActivateRequest):
                     if status not in ("member", "administrator", "creator"):
                         return {"success": False, "error": "Подписка на канал не подтверждена"}
                 else:
-                    # getChatMember вернул ошибку — пропускаем проверку
                     print(f"[activate] getChatMember error: {data}")
         except Exception as e:
             print(f"[activate] subscription check error: {e}")
 
-    # Подписка в порядке — активируем
+    # Активируем
     result = await db.activate(req.code)
     if result:
         return {"success": True, "user": result}
@@ -102,15 +97,13 @@ async def check_subscription(telegram_id: str):
 
 @app.get("/user/{code}")
 async def get_user(code: str):
-    now = int(time.time())
-    async with aiosqlite.connect(db.DATABASE) as db_conn:
-        db_conn.row_factory = aiosqlite.Row
-        async with db_conn.execute(
-            "SELECT username, code_expires FROM users WHERE code = ?",
-            (code,)
-        ) as cursor:
-            row = await cursor.fetchone()
-    if row and row["code_expires"] > now:
+    pool = await db.get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT username, code_expires FROM nexus_users WHERE code = $1",
+            code
+        )
+    if row and row["code_expires"] > int(time.time()):
         return {"valid": True, "username": row["username"]}
     return {"valid": False}
 
@@ -124,11 +117,10 @@ async def check_banned(telegram_id: str):
 
 @app.post("/offline/{telegram_id}")
 async def set_offline(telegram_id: str):
-    """Устанавливает last_seen на 61 сек назад — моментально показывает оффлайн."""
     pool = await db.get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
-            "UPDATE users SET last_seen = $1 WHERE telegram_id = $2",
+            "UPDATE nexus_users SET last_seen = $1 WHERE telegram_id = $2",
             int(time.time()) - 61, telegram_id
         )
     return {"ok": True}
