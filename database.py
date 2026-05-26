@@ -59,12 +59,27 @@ async def init_db():
         await db.execute("""
             INSERT OR IGNORE INTO stats (id, total_activations) VALUES (1, 0)
         """)
-        # Миграция: добавить last_seen если не существует
+                # Миграция: добавить last_seen если не существует
         try:
             await db.execute("ALTER TABLE users ADD COLUMN last_seen INTEGER")
         except Exception:
             pass
         await db.commit()
+
+
+async def get_pending_code(telegram_id: str) -> dict | None:
+    """Возвращает код и оставшееся время, если код ещё активен."""
+    now = int(time.time())
+    async with aiosqlite.connect(DATABASE) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT code, code_expires FROM users
+            WHERE telegram_id = ? AND code_expires > ? AND activated = 0
+        """, (telegram_id, now)) as cursor:
+            row = await cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
 
 def generate_code():
     return ''.join(random.choices(string.digits, k=6))
