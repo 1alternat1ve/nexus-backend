@@ -34,6 +34,25 @@ async def activate(req: m.ActivateRequest):
         return {"success": True, "user": result}
     return {"success": False, "error": "Неверный или просроченный код"}
 
+@app.get("/check_subscription/{telegram_id}")
+async def check_subscription(telegram_id: str):
+    bot_token = os.environ.get("BOT_TOKEN", "")
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                f"https://api.telegram.org/bot{bot_token}/getChatMember",
+                params={"chat_id": "@nickblite", "user_id": telegram_id},
+                timeout=5.0
+            )
+            data = r.json()
+            if data.get("ok"):
+                status = data["result"]["status"]
+                return {"subscribed": status in ("member", "administrator", "creator")}
+    except Exception:
+        pass
+    return {"subscribed": False}
+
 @app.get("/user/{code}")
 async def get_user(code: str):
     # Используется для проверки кода без активации
