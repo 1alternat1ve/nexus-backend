@@ -69,10 +69,8 @@ async def delete_msg(msg: Message):
 
 
 async def edit_with_menu(chat_id: int, message_id: int, text: str, markup=None):
-    try:
-        await bot.edit_message_text(text, chat_id, message_id, parse_mode="HTML", reply_markup=markup)
-    except Exception:
-        await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
+    await bot.delete_message(chat_id, message_id)
+    await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
 
 
 # === Пользовательские команды ===
@@ -99,12 +97,13 @@ async def cmd_start(msg: Message):
 async def check_sub(call: CallbackQuery):
     await call.answer()
     if await check_subscription(call.from_user.id):
-        await call.message.edit_text("✅ Подписка подтверждена! Вот ваш код:")
+        await call.message.delete()
         await send_code(call.message, str(call.from_user.id))
     else:
-        await call.message.edit_text(
+        await edit_with_menu(
+            call.message.chat.id, call.message.message_id,
             "❌ Вы ещё не подписаны на канал!",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text="✅ Я подписан", callback_data="check_sub")
             ]])
         )
@@ -175,12 +174,8 @@ async def btn_bans(call: CallbackQuery):
     buttons.append([InlineKeyboardButton(text="◀ Назад", callback_data="btn_back")])
 
     text = f"🔴 <b>Черный список ({len(banned)})</b>\n\nНажмите на пользователя чтобы разблокировать:"
-    try:
-        await call.message.edit_text(text, parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    except Exception:
-        await call.message.answer(text, parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await edit_with_menu(call.message.chat.id, call.message.message_id, text,
+        InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
 @router.callback_query(F.data == "btn_stats")
@@ -207,12 +202,12 @@ async def btn_stats(call: CallbackQuery):
 async def btn_broadcast(call: CallbackQuery):
     await call.answer()
     broadcast_state[call.from_user.id] = True
-    await call.message.edit_text(
+    await edit_with_menu(
+        call.message.chat.id, call.message.message_id,
         "📢 <b>Рассылка</b>\n\n"
         "Напишите сообщение в чат — оно будет отправлено всем активированным пользователям.\n\n"
         "Отмена: /cancel",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="◀ Отмена", callback_data="btn_broadcast_cancel")]
         ])
     )
