@@ -46,7 +46,13 @@ async def send_code(msg: Message, telegram_id: str):
         f"🔑 Ваш код активации NEXUS:\n\n"
         f"<code>{code_str}</code>\n\n"
         f"⏰ Код действует 3 минуты.",
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text="🚀 Открыть NEXUS",
+                url=f"nexus://activate?code={code_str}"
+            )
+        ]])
     )
 
 @router.message(Command("start"))
