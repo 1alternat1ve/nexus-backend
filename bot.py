@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import database as db
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,6 +22,30 @@ router = Router()
 
 CHANNEL_USERNAME = "@nickblite"
 ADMIN_ID = 7398936492
+
+
+def admin_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👥 Пользователи", callback_data="btn_users")],
+        [InlineKeyboardButton(text="🔴 Черный список", callback_data="btn_bans")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="btn_stats")],
+        [InlineKeyboardButton(text="📢 Рассылка", callback_data="btn_broadcast")],
+    ])
+
+
+def back_menu():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="◀ Назад", callback_data="btn_back")],
+    ])
+
+
+def ban_toggle_menu(user_id: str, banned: bool):
+    action = "✅ Разблокировать" if banned else "🔴 Заблокировать"
+    action_data = f"unban_{user_id}" if banned else f"ban_{user_id}"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=action, callback_data=action_data)],
+        [InlineKeyboardButton(text="◀ Назад", callback_data="btn_bans")],
+    ])
 
 
 async def check_subscription(telegram_id: int) -> bool:
@@ -43,16 +67,25 @@ async def send_code(msg: Message, telegram_id: str):
     )
 
 
-async def notify_admin(text: str):
+async def delete_msg(msg: Message):
     try:
-        await bot.send_message(ADMIN_ID, text, parse_mode="HTML")
+        await bot.delete_message(msg.chat.id, msg.message_id)
     except Exception:
         pass
 
 
+async def edit_with_menu(chat_id: int, message_id: int, text: str, markup=None):
+    try:
+        await bot.edit_message_text(text, chat_id, message_id, parse_mode="HTML", reply_markup=markup)
+    except Exception:
+        await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
+
+
+# === Пользовательские команды ===
+
 @router.message(Command("start"))
 async def cmd_start(msg: Message):
-    telegram_id = str(msg.from_user.id)
+    await delete_msg(msg)
 
     if not await check_subscription(msg.from_user.id):
         await msg.answer(
@@ -65,127 +98,151 @@ async def cmd_start(msg: Message):
         )
         return
 
-    await send_code(msg, telegram_id)
+    await send_code(msg, str(msg.from_user.id))
 
 
 @router.callback_query(F.data == "check_sub")
-async def check_sub(call):
+async def check_sub(call: CallbackQuery):
+    await call.answer()
     if await check_subscription(call.from_user.id):
         await call.message.edit_text("✅ Подписка подтверждена! Вот ваш код:")
         await send_code(call.message, str(call.from_user.id))
-        await call.answer()
     else:
-        await call.answer("❌ Вы ещё не подписаны на канал!", show_alert=True)
-
-
-@router.message(Command("users"))
-async def cmd_users(msg: Message):
-    if msg.from_user.id != ADMIN_ID:
-        await msg.answer("❌ Нет доступа.")
-        return
-
-    users = await db.get_all_users()
-    if not users:
-        await msg.answer("📭 Пока никто не логинился.")
-        return
-
-    lines = []
-    for u in users:
-        username = u.get("username") or "—"
-        status = "🔴 забанен" if u.get("banned") else "🟢 активен"
-        created = datetime.fromtimestamp(u["created_at"]).strftime("%d.%m.%Y %H:%M") if u.get("created_at") else "—"
-        lines.append(f"• <b>{username}</b> (ID: <code>{u['telegram_id']}</code>) — {status}")
-
-    await msg.answer(
-        f"👥 Всего пользователей: {len(users)}\n\n" + "\n".join(lines),
-        parse_mode="HTML"
-    )
-
-
-@router.message(Command("user"))
-async def cmd_user(msg: Message):
-    if msg.from_user.id != ADMIN_ID:
-        await msg.answer("❌ Нет доступа.")
-        return
-
-    parts = msg.text.split()
-    if len(parts) < 2:
-        await msg.answer("📖 Использование: /user <telegram_id>\nПример: /user 7398936492")
-        return
-
-    target_id = parts[1].strip().lstrip("@")
-    user = await db.get_user_by_telegram_id(target_id)
-
-    if not user:
-        await msg.answer("❌ Пользователь не найден.")
-        return
-
-    username = user.get("username") or "—"
-    status = "🔴 Забанен" if user.get("banned") else "🟢 Активен"
-    activated = "✅ Да" if user.get("activated") else "❌ Нет"
-    created = datetime.fromtimestamp(user["created_at"]).strftime("%d.%m.%Y %H:%M") if user.get("created_at") else "—"
-
-    text = (
-        f"<b>👤 Информация о пользователе</b>\n\n"
-        f"• <b>ID:</b> <code>{user['telegram_id']}</code>\n"
-        f"• <b>Username:</b> @{username}\n"
-        f"• <b>Статус:</b> {status}\n"
-        f"• <b>Активирован:</b> {activated}\n"
-        f"• <b>Первый вход:</b> {created}\n"
-    )
-
-    await msg.answer(text, parse_mode="HTML")
-
-
-@router.message(Command("ban"))
-async def cmd_ban(msg: Message):
-    if msg.from_user.id != ADMIN_ID:
-        await msg.answer("❌ Нет доступа.")
-        return
-
-    parts = msg.text.split()
-    if len(parts) < 2:
-        await msg.answer("📖 Использование:\n/ban <telegram_id> — заблокировать\n/unban <telegram_id> — разблокировать")
-        return
-
-    target_id = parts[1].strip()
-    user = await db.get_user_by_telegram_id(target_id)
-
-    if not user:
-        await msg.answer("❌ Пользователь не найден.")
-        return
-
-    await db.ban_user(target_id, True)
-    await msg.answer(f"🔴 Пользователь <b>{user.get('username') or target_id}</b> заблокирован.", parse_mode="HTML")
-
-
-@router.message(Command("unban"))
-async def cmd_unban(msg: Message):
-    if msg.from_user.id != ADMIN_ID:
-        await msg.answer("❌ Нет доступа.")
-        return
-
-    parts = msg.text.split()
-    if len(parts) < 2:
-        await msg.answer("📖 Использование: /unban <telegram_id>")
-        return
-
-    target_id = parts[1].strip()
-    user = await db.get_user_by_telegram_id(target_id)
-
-    if not user:
-        await msg.answer("❌ Пользователь не найден.")
-        return
-
-    await db.ban_user(target_id, False)
-    await msg.answer(f"🟢 Пользователь <b>{user.get('username') or target_id}</b> разблокирован.", parse_mode="HTML")
+        await call.message.edit_text(
+            "❌ Вы ещё не подписаны на канал!",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="✅ Я подписан", callback_data="check_sub")
+            ]])
+        )
 
 
 @router.message(F.text)
 async def any_text(msg: Message):
     if msg.text.startswith("/"):
         return
+    await delete_msg(msg)
     await msg.answer("Напишите /start чтобы получить код активации.")
+
+
+# === Админ-панель ===
+
+@router.message(Command("admin"))
+@router.message(Command("menu"))
+async def cmd_admin(msg: Message):
+    if msg.from_user.id != ADMIN_ID:
+        return
+    await delete_msg(msg)
+
+    text = "<b>⚙️ Админ-панель NEXUS</b>\n\nВыберите действие:"
+    await msg.answer(text, parse_mode="HTML", reply_markup=admin_menu())
+
+
+@router.callback_query(F.data == "btn_back")
+async def btn_back(call: CallbackQuery):
+    await call.answer()
+    text = "<b>⚙️ Админ-панель NEXUS</b>\n\nВыберите действие:"
+    await edit_with_menu(call.message.chat.id, call.message.message_id, text, admin_menu())
+
+
+@router.callback_query(F.data == "btn_users")
+async def btn_users(call: CallbackQuery):
+    await call.answer()
+    users = await db.get_all_users()
+
+    if not users:
+        text = "📭 Пока никто не логинился."
+        await edit_with_menu(call.message.chat.id, call.message.message_id, text, back_menu())
+        return
+
+    lines = []
+    for u in users:
+        username = u.get("username") or "—"
+        status = "🔴" if u.get("banned") else "🟢"
+        lines.append(f"{status} <b>{username}</b> — <code>{u['telegram_id']}</code>")
+
+    text = f"<b>👥 Пользователи ({len(users)})</b>\n\n" + "\n".join(lines)
+    await edit_with_menu(call.message.chat.id, call.message.message_id, text, back_menu())
+
+
+@router.callback_query(F.data == "btn_bans")
+async def btn_bans(call: CallbackQuery):
+    await call.answer()
+    users = await db.get_all_users()
+    banned = [u for u in users if u.get("banned")]
+
+    if not banned:
+        text = "🔴 <b>Черный список</b>\n\nПусто — нет заблокированных."
+        await edit_with_menu(call.message.chat.id, call.message.message_id, text, back_menu())
+        return
+
+    buttons = []
+    for u in banned:
+        username = u.get("username") or u["telegram_id"]
+        buttons.append([InlineKeyboardButton(
+            text=f"🟢 {username}",
+            callback_data=f"unban_{u['telegram_id']}"
+        )])
+    buttons.append([InlineKeyboardButton(text="◀ Назад", callback_data="btn_back")])
+
+    text = f"🔴 <b>Черный список ({len(banned)})</b>\n\nНажмите на пользователя чтобы разблокировать:"
+    try:
+        await call.message.edit_text(text, parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    except Exception:
+        await call.message.answer(text, parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+@router.callback_query(F.data == "btn_stats")
+async def btn_stats(call: CallbackQuery):
+    await call.answer()
+    s = await db.get_stats()
+    users = await db.get_all_users()
+    active = len([u for u in users if u.get("activated")])
+    banned = len([u for u in users if u.get("banned")])
+    last = datetime.fromtimestamp(s["last_activation"]).strftime("%d.%m.%Y %H:%M") if s.get("last_activation") else "—"
+
+    text = (
+        f"<b>📊 Статистика</b>\n\n"
+        f"👥 Всего в базе: <b>{len(users)}</b>\n"
+        f"✅ Активировано: <b>{active}</b>\n"
+        f"🔴 Заблокировано: <b>{banned}</b>\n"
+        f"🔑 Всего активаций: <b>{s['total_activations']}</b>\n"
+        f"🕐 Последняя активация: <b>{last}</b>"
+    )
+    await edit_with_menu(call.message.chat.id, call.message.message_id, text, back_menu())
+
+
+@router.callback_query(F.data == "btn_broadcast")
+async def btn_broadcast(call: CallbackQuery):
+    await call.answer()
+    await call.message.edit_text(
+        "📢 <b>Рассылка</b>\n\n"
+        "Напишите сообщение в чат — оно будет отправлено всем активированным пользователям.\n\n"
+        "Отмена: /cancel",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀ Отмена", callback_data="btn_back")]
+        ])
+    )
+
+
+@router.callback_query(F.data.startswith("ban_"))
+async def btn_ban(call: CallbackQuery):
+    user_id = call.data[4:]
+    user = await db.get_user_by_telegram_id(user_id)
+    await db.ban_user(user_id, True)
+    await call.answer(f"🔴 Заблокирован: {user.get('username') or user_id}", show_alert=True)
+    await btn_bans(call)
+
+
+@router.callback_query(F.data.startswith("unban_"))
+async def btn_unban(call: CallbackQuery):
+    user_id = call.data[7:]
+    user = await db.get_user_by_telegram_id(user_id)
+    await db.ban_user(user_id, False)
+    await call.answer(f"🟢 Разблокирован: {user.get('username') or user_id}", show_alert=True)
+    await btn_bans(call)
 
 
 async def main():
