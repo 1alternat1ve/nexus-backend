@@ -37,9 +37,9 @@ async def activate(req: m.ActivateRequest):
 
 @app.get("/check_subscription/{telegram_id}")
 async def check_subscription(telegram_id: str):
+    import httpx
     bot_token = os.environ.get("BOT_TOKEN", "")
     try:
-        import httpx
         async with httpx.AsyncClient() as client:
             r = await client.get(
                 f"https://api.telegram.org/bot{bot_token}/getChatMember",
@@ -50,8 +50,8 @@ async def check_subscription(telegram_id: str):
             if data.get("ok"):
                 status = data["result"]["status"]
                 return {"subscribed": status in ("member", "administrator", "creator")}
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[check_subscription] error: {e}")
     return {"subscribed": False}
 
 @app.get("/user/{code}")
