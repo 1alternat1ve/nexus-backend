@@ -86,7 +86,7 @@ def generate_code():
 
 async def create_code(telegram_id: str, username: str) -> str:
     code = generate_code()
-    expires = int(time.time()) + 180  # 3 минуты
+    expires = int(time.time()) + 60  # 1 минута
     avatar = await get_avatar_url(int(telegram_id)) if BOT_TOKEN else None
 
     async with aiosqlite.connect(DATABASE) as db:

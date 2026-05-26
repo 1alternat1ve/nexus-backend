@@ -56,7 +56,7 @@ async def send_code(msg: Message, telegram_id: str):
     await msg.answer(
         f"🔑 Ваш код активации NEXUS:\n\n"
         f"<code>{code}</code>\n\n"
-        f"⏰ Код действует 3 минуты.\n\n"
+        f"⏰ Код действует 1 минуту.\n\n"
         f"Введите код вручную в лаунчере NEXUS.",
         parse_mode="HTML"
     )
