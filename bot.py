@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import database as db
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ForceReply
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -259,14 +259,12 @@ async def btn_stats(call: CallbackQuery):
 async def btn_search(call: CallbackQuery):
     await call.answer()
     search_state[call.from_user.id] = True
-    await edit_with_menu(
-        call.message.chat.id, call.message.message_id,
+    await call.message.reply(
         "🔍 <b>Поиск пользователя</b>\n\n"
         "Введите username или ID для поиска.\n\n"
         "Отмена: /cancel",
-        InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀ Отмена", callback_data="btn_back")]
-        ])
+        parse_mode="HTML",
+        reply_markup=ForceReply()
     )
 
 
@@ -380,14 +378,12 @@ async def btn_users(call: CallbackQuery):
 async def btn_broadcast(call: CallbackQuery):
     await call.answer()
     broadcast_state[call.from_user.id] = True
-    await edit_with_menu(
-        call.message.chat.id, call.message.message_id,
+    await call.message.reply(
         "📢 <b>Рассылка</b>\n\n"
-        "Напишите сообщение в чат — оно будет отправлено всем активированным пользователям.\n\n"
+        "Введите сообщение — оно будет отправлено всем активированным пользователям.\n\n"
         "Отмена: /cancel",
-        InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="◀ Отмена", callback_data="btn_broadcast_cancel")]
-        ])
+        parse_mode="HTML",
+        reply_markup=ForceReply()
     )
 
 
@@ -395,8 +391,13 @@ async def btn_broadcast(call: CallbackQuery):
 async def btn_broadcast_cancel(call: CallbackQuery):
     await call.answer()
     broadcast_state.pop(call.from_user.id, None)
-    text = "<b>⚙️ Админ-панель NEXUS</b>\n\nВыберите действие:"
-    await edit_with_menu(call.message.chat.id, call.message.message_id, text, admin_menu())
+    await call.message.delete()
+    await call.message.answer(
+        "❌ Рассылка отменена.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀ В меню", callback_data="btn_back")]
+        ])
+    )
 
 
 @router.callback_query(F.data.startswith("ban_"))
