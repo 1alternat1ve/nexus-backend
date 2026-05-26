@@ -114,6 +114,13 @@ async def get_user(code: str):
         return {"valid": True, "username": row["username"]}
     return {"valid": False}
 
+@app.get("/banned/{telegram_id}")
+async def check_banned(telegram_id: str):
+    user = await db.get_user_by_telegram_id(telegram_id)
+    if user and user.get("banned"):
+        return {"banned": True}
+    return {"banned": False}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
