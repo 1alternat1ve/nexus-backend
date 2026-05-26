@@ -323,7 +323,7 @@ async def any_text(msg: Message):
 async def main():
     await db.init_db()
     dp.include_router(router)
-    logger.info("Бот запущен")
+    logger.info("Бот запущен v2")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, skip_updates=True)
 
